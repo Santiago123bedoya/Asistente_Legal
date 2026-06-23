@@ -1,0 +1,23 @@
+{
+  "name": "legal-icoop",
+  "version": "1.0.0",
+  "description": "LEGAL-iCoop - Asesor Legal Inteligente en Derecho Cooperativo",
+  "private": true,
+  "scripts": {
+    "dev": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "preview": "cd frontend && npm run preview",
+    "server": "cd backend && node api/server.js",
+    "start": "concurrently \"npm run server\" \"npm run dev\"",
+    "install-all": "npm install && cd frontend && npm install && cd ../backend && npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "framer-motion": "^12.40.0",
+    "lucide-react": "^1.21.0",
+    "node-appwrite": "^26.2.0"
+  }
+}

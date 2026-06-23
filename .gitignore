@@ -1,0 +1,11 @@
+node_modules/
+.env
+dist/
+.vite/
+*.log
+.DS_Store
+package-lock.json
+collections
+webhooks
+docs/
+commons/

@@ -1,0 +1,178 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-gray-50 text-gray-800 antialiased;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-100 rounded-full;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 rounded-full transition-colors;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400;
+  }
+
+  ::selection {
+    @apply bg-blue-200 text-blue-900;
+  }
+
+  *:focus-visible {
+    @apply outline-none ring-2 ring-blue-500 ring-offset-2;
+  }
+}
+
+@layer components {
+  /* Chat bubbles */
+  .chat-bubble-user {
+    @apply bg-blue-600 text-white rounded-2xl rounded-tr-sm px-4 py-3 shadow-sm;
+  }
+  
+  .chat-bubble-bot {
+    @apply bg-white text-gray-800 rounded-2xl rounded-tl-sm px-4 py-3 shadow-md border border-gray-100;
+  }
+  
+  .chat-bubble-system {
+    @apply bg-yellow-50 text-yellow-800 border border-yellow-200 rounded-xl px-4 py-3 text-sm;
+  }
+  
+  .chat-bubble-error {
+    @apply bg-red-50 text-red-800 border border-red-200 rounded-xl px-4 py-3 text-sm;
+  }
+
+  /* Metric cards */
+  .metric-card {
+    @apply bg-white rounded-xl shadow-sm p-6 border border-gray-100 hover:shadow-md transition-shadow duration-200;
+  }
+  
+  .metric-value {
+    @apply text-3xl font-bold text-gray-800;
+  }
+  
+  .metric-label {
+    @apply text-sm text-gray-500 font-medium;
+  }
+
+  /* Tables */
+  .table-container {
+    @apply bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden;
+  }
+  
+  .table-header {
+    @apply px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50;
+  }
+  
+  .table-cell {
+    @apply px-6 py-4 text-sm text-gray-700;
+  }
+  
+  .table-row {
+    @apply border-b border-gray-100 hover:bg-gray-50 transition-colors;
+  }
+
+  /* Badges */
+  .badge {
+    @apply px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+  
+  .badge-admin {
+    @apply bg-red-100 text-red-700;
+  }
+  
+  .badge-user {
+    @apply bg-gray-100 text-gray-700;
+  }
+  
+  .badge-editor {
+    @apply bg-blue-100 text-blue-700;
+  }
+  
+  .badge-verified {
+    @apply bg-green-100 text-green-700;
+  }
+  
+  .badge-pending {
+    @apply bg-yellow-100 text-yellow-700;
+  }
+
+  /* Risk levels */
+  .risk-critical {
+    @apply bg-red-100 text-red-700 border-red-300;
+  }
+  
+  .risk-high {
+    @apply bg-orange-100 text-orange-700 border-orange-300;
+  }
+  
+  .risk-medium {
+    @apply bg-yellow-100 text-yellow-700 border-yellow-300;
+  }
+  
+  .risk-low {
+    @apply bg-green-100 text-green-700 border-green-300;
+  }
+  
+  .risk-none {
+    @apply bg-gray-100 text-gray-500 border-gray-200;
+  }
+
+  /* Suggestion chips */
+  .suggestion-chip {
+    @apply flex-shrink-0 text-xs bg-white border border-gray-200 rounded-full px-4 py-1.5 
+           hover:bg-blue-50 hover:border-blue-300 transition-all duration-200 shadow-sm cursor-pointer whitespace-nowrap;
+  }
+
+  /* Chat input */
+  .chat-input {
+    @apply w-full border border-gray-300 rounded-xl px-4 py-3 resize-none 
+           focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+           transition-all duration-200 bg-white;
+  }
+  
+  .chat-input:disabled {
+    @apply bg-gray-100 cursor-not-allowed opacity-60;
+  }
+
+  .chat-send-btn {
+    @apply bg-blue-600 text-white rounded-xl px-6 py-3 font-medium
+           hover:bg-blue-700 transition-all duration-200
+           disabled:opacity-50 disabled:cursor-not-allowed
+           flex items-center justify-center gap-2 min-w-[100px];
+  }
+
+  /* Category tabs */
+  .category-tab {
+    @apply px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap
+           transition-all duration-200 cursor-pointer;
+  }
+  
+  .category-tab-active {
+    @apply bg-blue-600 text-white;
+  }
+  
+  .category-tab-inactive {
+    @apply bg-gray-100 text-gray-600 hover:bg-gray-200;
+  }
+}
