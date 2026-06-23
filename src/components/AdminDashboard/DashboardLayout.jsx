@@ -89,6 +89,8 @@ const DashboardLayout = ({ user, onLogout }) => {
               userRole={userRole} 
               onLogout={onLogout}
               isAdminMode={true}
+              mensajesEnviados={user?.mensajes_enviados || 0}
+              limiteMensajes={user?.limite_mensajes ?? 10}
             />
           </div>
         );

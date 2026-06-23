@@ -4,25 +4,29 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Send, MessageSquare, User, Bot, Sparkles, 
-  LogOut, Menu, X, ChevronDown, HelpCircle 
+  LogOut, Menu, X, ChevronDown, HelpCircle, Trash2, AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiService } from '../../services/appwrite.service';
+import MessageBubble from './MessageBubble';
 
-const ChatWindow = ({ userId, userRole, onLogout, isAdminMode = false, userData = null }) => {
-  const [messages, setMessages] = useState([
-    {
-      id: 'welcome',
-      sender: 'bot',
-      text: '👋 ¡Hola! Soy LEGAL-iCoop, tu Asesor Legal Inteligente en Derecho Cooperativo.\n\n¿En qué puedo ayudarte hoy?',
-      timestamp: new Date().toISOString()
-    }
-  ]);
+const ChatWindow = ({ 
+  userId, userRole, onLogout, isAdminMode = false, userData = null,
+  mensajesEnviados: initialMensajes = 0, limiteMensajes: initialLimite = 10 
+}) => {
+  const [messages, setMessages] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [mensajesEnviados, setMensajesEnviados] = useState(initialMensajes);
+  const [limiteMensajes] = useState(initialLimite);
+  const [showModalLimite, setShowModalLimite] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const historyLoadedRef = useRef(false);
   const messagesEndRef = useRef(null);
+  const mensajesRestantes = Math.max(0, limiteMensajes - mensajesEnviados);
 
   // ✅ Obtener datos del usuario de manera segura
   // Primero de userData, luego de localStorage, luego valores por defecto
@@ -64,12 +68,54 @@ const ChatWindow = ({ userId, userRole, onLogout, isAdminMode = false, userData 
   const userEmail = userInfo.email;
   const userInitial = userName?.charAt(0)?.toUpperCase() || 'U';
 
+  // 💾 Cargar historial al montar el componente
+  useEffect(() => {
+    if (!userId || historyLoadedRef.current) return;
+    historyLoadedRef.current = true;
+
+    const cargarHistorial = async () => {
+      setLoadingHistory(true);
+      try {
+        const response = await apiService.obtenerHistorial(userId);
+        if (response.success && response.history?.length > 0) {
+          setMessages(prev => [...response.history, ...prev]);
+        } else {
+          // Sin historial → mensaje de bienvenida
+          setMessages([{
+            id: 'welcome',
+            sender: 'bot',
+            text: '👋 ¡Hola! Soy LEGAL-iCoop, tu Asesor Legal Inteligente en Derecho Cooperativo.\n\n¿En qué puedo ayudarte hoy?',
+            timestamp: new Date().toISOString()
+          }]);
+        }
+      } catch (e) {
+        console.warn('⚠️ Error cargando historial:', e);
+        setMessages([{
+          id: 'welcome',
+          sender: 'bot',
+          text: '👋 ¡Hola! Soy LEGAL-iCoop, tu Asesor Legal Inteligente en Derecho Cooperativo.\n\n¿En qué puedo ayudarte hoy?',
+          timestamp: new Date().toISOString()
+        }]);
+      } finally {
+        setLoadingHistory(false);
+      }
+    };
+
+    cargarHistorial();
+  }, [userId]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
+
+    // ✅ Verificar límite de mensajes
+    if (mensajesRestantes <= 0) {
+      setShowModalLimite(true);
+      return;
+    }
 
     const userMessage = {
       id: `user-${Date.now()}`,
@@ -97,6 +143,23 @@ const ChatWindow = ({ userId, userRole, onLogout, isAdminMode = false, userData 
           sources: response.response.sources || [],
           timestamp: new Date().toISOString()
         }]);
+
+        // ✅ Incrementar contador en Appwrite
+        const nuevoTotal = mensajesEnviados + 1;
+        setMensajesEnviados(nuevoTotal);
+        apiService.incrementarContadorMensajes(userId);
+
+        // ✅ Actualizar localStorage
+        try {
+          const saved = localStorage.getItem('legal_icoop_user');
+          if (saved) {
+            const userData_ = JSON.parse(saved);
+            userData_.mensajes_enviados = nuevoTotal;
+            localStorage.setItem('legal_icoop_user', JSON.stringify(userData_));
+          }
+        } catch (e) {
+          console.warn('⚠️ No se pudo actualizar localStorage:', e);
+        }
       } else {
         setMessages(prev => [...prev, {
           id: `error-${Date.now()}`,
@@ -117,6 +180,26 @@ const ChatWindow = ({ userId, userRole, onLogout, isAdminMode = false, userData 
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleClearChat = async () => {
+    setMessages([]);
+    setShowClearConfirm(false);
+
+    try {
+      const saved = localStorage.getItem('legal_icoop_user');
+      if (saved) {
+        const userData_ = JSON.parse(saved);
+        // ✅ NO resetear mensajes_enviados — solo limpia la UI
+        localStorage.setItem('legal_icoop_user', JSON.stringify(userData_));
+      }
+    } catch (e) {
+      console.warn('⚠️ Error al limpiar chat:', e);
+    }
+  };
+
+  const handleCloseModal = () => {
+    setShowModalLimite(false);
   };
 
   const suggestions = [
@@ -171,7 +254,30 @@ const ChatWindow = ({ userId, userRole, onLogout, isAdminMode = false, userData 
           </nav>
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t">
+        <div className="absolute bottom-0 left-0 right-0 p-4 border-t space-y-2">
+          {/* 📊 Contador de mensajes */}
+          <div className={`px-4 py-2.5 rounded-xl text-xs font-medium ${
+            mensajesRestantes <= 3 
+              ? 'bg-red-50 text-red-600 border border-red-200' 
+              : 'bg-gray-50 text-gray-500 border border-gray-100'
+          }`}>
+            <div className="flex items-center justify-between">
+              <span>📊 Mensajes disponibles</span>
+              <span className="font-bold">{mensajesRestantes}/{limiteMensajes}</span>
+            </div>
+          </div>
+
+          {/* 🗑️ Limpiar chat */}
+          {messages.length > 1 && (
+            <button
+              onClick={() => setShowClearConfirm(true)}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-500 hover:bg-gray-50 transition-all"
+            >
+              <Trash2 size={18} />
+              <span className="text-sm font-medium">Limpiar Chat</span>
+            </button>
+          )}
+
           <button
             onClick={onLogout}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-600 hover:bg-red-50 transition-all"
@@ -256,44 +362,37 @@ const ChatWindow = ({ userId, userRole, onLogout, isAdminMode = false, userData 
                   <p className="text-xs text-blue-200">Asesor Legal Inteligente</p>
                 </div>
               </div>
-              <span className="text-xs bg-white/20 px-3 py-1 rounded-full">
-                🟢 Conectado
-              </span>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs px-3 py-1 rounded-full font-medium ${
+                  mensajesRestantes <= 3
+                    ? 'bg-red-400/20 text-red-200'
+                    : 'bg-white/20 text-blue-200'
+                }`}>
+                  📊 {mensajesRestantes}/{limiteMensajes}
+                </span>
+                <span className="text-xs bg-white/20 px-3 py-1 rounded-full">
+                  🟢 Conectado
+                </span>
+              </div>
             </div>
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
-              {messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div className={`max-w-[80%] ${msg.sender === 'user' ? 'order-2' : 'order-1'}`}>
-                    {msg.sender === 'bot' && (
-                      <div className="flex items-center gap-2 mb-1">
-                        <Bot size={16} className="text-blue-600" />
-                        <span className="text-xs font-medium text-gray-600">LEGAL-iCoop</span>
-                      </div>
-                    )}
-                    <div className={`rounded-2xl px-4 py-3 ${
-                      msg.sender === 'user'
-                        ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white'
-                        : msg.sender === 'system'
-                        ? 'bg-red-50 text-red-700 border border-red-200'
-                        : 'bg-white shadow-md border border-gray-100 text-gray-800'
-                    }`}>
-                      <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
+              {loadingHistory ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <div className="flex gap-1 justify-center mb-3">
+                      <span className="w-2.5 h-2.5 bg-blue-600 rounded-full animate-bounce" />
+                      <span className="w-2.5 h-2.5 bg-blue-600 rounded-full animate-bounce delay-100" />
+                      <span className="w-2.5 h-2.5 bg-blue-600 rounded-full animate-bounce delay-200" />
                     </div>
-                    {msg.sender === 'user' && (
-                      <div className="flex items-center gap-2 justify-end mt-1">
-                        <span className="text-xs text-gray-400">
-                          {new Date(msg.timestamp).toLocaleTimeString()}
-                        </span>
-                      </div>
-                    )}
+                    <p className="text-sm text-gray-400">Cargando historial...</p>
                   </div>
                 </div>
-              ))}
+              ) : (
+                messages.map((msg) => (
+                  <MessageBubble key={msg.id} message={msg} />
+                )))}
               {isLoading && (
                 <div className="flex justify-start">
                   <div className="bg-white shadow-md border border-gray-100 rounded-2xl px-4 py-3 flex items-center gap-2">
@@ -351,6 +450,104 @@ const ChatWindow = ({ userId, userRole, onLogout, isAdminMode = false, userData 
           </div>
         </main>
       </div>
+
+      {/* ============================================================
+      MODAL: LÍMITE DE MENSAJES ALCANZADO
+      ============================================================ */}
+      <AnimatePresence>
+        {showModalLimite && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+            onClick={handleCloseModal}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="text-center">
+                <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <AlertTriangle size={32} className="text-amber-600" />
+                </div>
+                <h3 className="text-xl font-bold text-gray-800 mb-2">
+                  Límite de mensajes alcanzado
+                </h3>
+                <p className="text-sm text-gray-600 mb-6 leading-relaxed">
+                  Has alcanzado el límite de {limiteMensajes} mensajes en tu plan actual.
+                  Para seguir utilizando LEGAL-iCoop, por favor escribe a:
+                </p>
+                <a
+                  href="mailto:atencion@ebssys.com"
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-medium hover:shadow-lg hover:shadow-blue-500/25 transition-all mb-4"
+                >
+                  ✉️ atencion@ebssys.com
+                </a>
+                <p className="text-xs text-gray-400">
+                  Nuestro equipo te atenderá a la brevedad para gestionar tu solicitud.
+                </p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ============================================================
+      MODAL: CONFIRMAR LIMPIEZA DE CHAT
+      ============================================================ */}
+      <AnimatePresence>
+        {showClearConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+            onClick={() => setShowClearConfirm(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="text-center">
+                <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Trash2 size={32} className="text-red-500" />
+                </div>
+                <h3 className="text-xl font-bold text-gray-800 mb-2">
+                  ¿Limpiar chat?
+                </h3>
+                <p className="text-sm text-gray-600 mb-6">
+                  Se eliminarán todos los mensajes de esta conversación.
+                  <br />
+                  <span className="font-semibold text-amber-600">
+                    El contador de mensajes no se restablecerá.
+                  </span>
+                </p>
+                <div className="flex gap-3 justify-center">
+                  <button
+                    onClick={() => setShowClearConfirm(false)}
+                    className="px-6 py-2.5 border border-gray-200 rounded-xl text-gray-600 hover:bg-gray-50 transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleClearChat}
+                    className="px-6 py-2.5 bg-gradient-to-r from-red-500 to-rose-500 text-white rounded-xl hover:shadow-lg hover:shadow-red-500/25 transition-all"
+                  >
+                    🗑️ Limpiar
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

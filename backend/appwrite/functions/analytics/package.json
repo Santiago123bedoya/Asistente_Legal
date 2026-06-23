@@ -1,9 +1,0 @@
-{
-  "name": "legal-icoop-analytics",
-  "version": "1.0.0",
-  "description": "Legal-iCoop Analytics Function",
-  "main": "index.js",
-  "dependencies": {
-    "node-appwrite": "^11.0.0"
-  }
-}

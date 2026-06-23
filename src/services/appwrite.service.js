@@ -21,40 +21,69 @@ export const apiService = {
   async sendChatMessage({ question, userId, useRAG = true }) {
     try {
       console.log('📤 Pregunta:', question);
-      
-      const documentos = await this.buscarEnBaseDeDatos(question);
-      
-      if (documentos.length === 0) {
-        return this.respuestaSinResultados(question);
+
+      // ✅ Saludos → respuesta instantánea sin pegarle a la API
+      const saludo = this.detectarSaludo(question);
+      if (saludo) {
+        return {
+          success: true,
+          response: {
+            text: saludo,
+            sources: [],
+            confidence: 1,
+            category: 'SALUDO',
+            needsHuman: false,
+            timestamp: new Date().toISOString()
+          }
+        };
       }
-      
+
+      // 🔍 Buscar contexto (opcional — DeepSeek responde igual)
+      const documentos = await this.buscarEnBaseDeDatos(question);
+
+      // 🧠 DeepSeek responde SIEMPRE, con contexto si hay, sin contexto si no
       const respuestaIA = await this.generarRespuestaConIA(question, documentos);
-      
+
+      // 💾 Guardar historial
       try {
         await this.guardarHistorial(userId, question, respuestaIA);
       } catch (e) {
         console.warn('⚠️ No se pudo guardar historial:', e.message);
       }
-      
+
+      const tieneDocs = documentos && documentos.length > 0;
+
       return {
         success: true,
         response: {
           text: respuestaIA,
-          sources: documentos.slice(0, 3).map(doc => ({
-            title: doc.Titulo || doc.titulo,
-            category: doc.Categoria || doc.categoria,
-            snippet: (doc.Contenido || doc.contenido || '').substring(0, 200)
-          })),
-          confidence: 0.9,
-          category: documentos[0]?.Categoria || 'GENERAL',
-          needsHuman: false,
+          sources: tieneDocs
+            ? documentos.slice(0, 3).map(doc => ({
+                title: doc.Titulo || doc.titulo,
+                category: doc.Categoria || doc.categoria,
+                snippet: (doc.Contenido || doc.contenido || '').substring(0, 200)
+              }))
+            : [],
+          confidence: tieneDocs ? 0.9 : 0.6,
+          category: tieneDocs ? (documentos[0]?.Categoria || 'GENERAL') : 'GENERAL',
+          needsHuman: !tieneDocs,
           timestamp: new Date().toISOString()
         }
       };
-      
+
     } catch (error) {
       console.error('Error en chat:', error);
-      return this.fallbackSinIA(question);
+      return {
+        success: true,
+        response: {
+          text: this.respuestaSinResultados(question),
+          sources: [],
+          confidence: 0.3,
+          category: 'GENERAL',
+          needsHuman: true,
+          timestamp: new Date().toISOString()
+        }
+      };
     }
   },
 
@@ -97,6 +126,169 @@ export const apiService = {
     } catch (error) {
       console.error('❌ Error en guardarHistorial:', error);
       return false;
+    }
+  },
+
+  // ============================================================
+  // 📖 OBTENER HISTORIAL
+  // ============================================================
+  async obtenerHistorial(userId, limit = 50) {
+    try {
+      console.log('📖 Obteniendo historial para:', userId);
+
+      const response = await fetch(
+        `${APPWRITE_ENDPOINT}/databases/${DATABASE_ID}/collections/${CHAT_HISTORY_COLLECTION_ID}/documents`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Appwrite-Project': PROJECT_ID,
+            'X-Appwrite-Key': API_KEY
+          }
+        }
+      );
+
+      if (!response.ok) {
+        console.warn('⚠️ No se pudo obtener historial:', response.status);
+        return { success: false, history: [] };
+      }
+
+      const data = await response.json();
+      const docs = data.documents || [];
+
+      // Filtrar por usuario y ordenar cronológicamente
+      const historial = docs
+        .filter(doc => doc.usuarios === userId)
+        .sort((a, b) => new Date(a.Hora_realizacion) - new Date(b.Hora_realizacion))
+        .slice(-limit);
+
+      // Convertir a formato mensajes
+      const messages = [];
+      historial.forEach(doc => {
+        messages.push({
+          id: `hist-${doc.$id}-q`,
+          sender: 'user',
+          text: doc.Pregunta,
+          timestamp: doc.Hora_realizacion
+        });
+        messages.push({
+          id: `hist-${doc.$id}-a`,
+          sender: 'bot',
+          text: doc.Respuesta,
+          timestamp: doc.Hora_realizacion
+        });
+      });
+
+      console.log(`✅ Historial cargado: ${messages.length} mensajes`);
+      return { success: true, history: messages };
+
+    } catch (error) {
+      console.error('❌ Error obteniendo historial:', error);
+      return { success: false, history: [] };
+    }
+  },
+
+  // Alias para compatibilidad con chat.service.js
+  getChatHistory(userId, limit) {
+    return this.obtenerHistorial(userId, limit);
+  },
+
+  // ============================================================
+  // 🔢 LÍMITES DE MENSAJES
+  // ============================================================
+  async obtenerLimitesMensajes(userId) {
+    try {
+      const response = await fetch(
+        `${APPWRITE_ENDPOINT}/databases/${DATABASE_ID}/collections/${USERS_COLLECTION_ID}/documents/${userId}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Appwrite-Project': PROJECT_ID,
+            'X-Appwrite-Key': API_KEY
+          }
+        }
+      );
+
+      if (!response.ok) return { mensajes_enviados: 0, limite_mensajes: 10 };
+
+      const doc = await response.json();
+      return {
+        mensajes_enviados: doc.mensajes_enviados || 0,
+        limite_mensajes: doc.limite_mensajes ?? 10
+      };
+    } catch (error) {
+      console.error('❌ Error obteniendo límites:', error);
+      return { mensajes_enviados: 0, limite_mensajes: 10 };
+    }
+  },
+
+  async incrementarContadorMensajes(userId) {
+    try {
+      const limites = await this.obtenerLimitesMensajes(userId);
+      const nuevosEnviados = (limites.mensajes_enviados || 0) + 1;
+
+      const response = await fetch(
+        `${APPWRITE_ENDPOINT}/databases/${DATABASE_ID}/collections/${USERS_COLLECTION_ID}/documents/${userId}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Appwrite-Project': PROJECT_ID,
+            'X-Appwrite-Key': API_KEY
+          },
+          body: JSON.stringify({
+            data: {
+              mensajes_enviados: nuevosEnviados
+            }
+          })
+        }
+      );
+
+      if (!response.ok) {
+        console.warn('⚠️ No se pudo incrementar contador:', await response.text());
+        return false;
+      }
+
+      console.log(`✅ Contador incrementado: ${nuevosEnviados}`);
+      return true;
+    } catch (error) {
+      console.error('❌ Error incrementando contador:', error);
+      return false;
+    }
+  },
+
+  async actualizarLimiteMensajes(userId, nuevoLimite) {
+    try {
+      const limite = Math.max(1, Math.min(1000, parseInt(nuevoLimite) || 10));
+
+      const response = await fetch(
+        `${APPWRITE_ENDPOINT}/databases/${DATABASE_ID}/collections/${USERS_COLLECTION_ID}/documents/${userId}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Appwrite-Project': PROJECT_ID,
+            'X-Appwrite-Key': API_KEY
+          },
+          body: JSON.stringify({
+            data: {
+              limite_mensajes: limite
+            }
+          })
+        }
+      );
+
+      if (!response.ok) {
+        console.error('❌ Error actualizando límite:', await response.text());
+        return { success: false };
+      }
+
+      console.log(`✅ Límite actualizado a ${limite}`);
+      return { success: true, limite };
+    } catch (error) {
+      console.error('❌ Error actualizando límite:', error);
+      return { success: false };
     }
   },
 
@@ -187,7 +379,9 @@ export const apiService = {
               Rol: userData.role || 'user',
               Verificado: false,
               Created_by: 'system',
-              Ultima_sesion: null
+              Ultima_sesion: null,
+              mensajes_enviados: 0,
+              limite_mensajes: 10
             }
           })
         }
@@ -296,6 +490,7 @@ export const apiService = {
           role = dbUser.Rol || 'user';
           console.log('✅ Usuario encontrado en DB por email, rol:', role);
           console.log('📋 DB User ID:', dbUser.$id);
+          console.log('📊 Mensajes:', dbUser.mensajes_enviados || 0, '/', dbUser.limite_mensajes || 10);
         } else {
           console.warn('⚠️ Usuario no encontrado en DB por email');
         }
@@ -310,6 +505,8 @@ export const apiService = {
           name: authUser.name,
           role: role.toLowerCase(),
           verified: authUser.emailVerification || false,
+          mensajes_enviados: dbUser?.mensajes_enviados || 0,
+          limite_mensajes: dbUser?.limite_mensajes ?? 10,
           dbUser: dbUser,
           sessionId: sessionData.$id,
           authUserId: sessionData.userId
@@ -461,22 +658,62 @@ export const apiService = {
   },
 
   // ============================================================
-  // 🧠 GENERAR RESPUESTA CON DEEPSEEK
+  // 🧠 GENERAR RESPUESTA CON DEEPSEEK (CON O SIN CONTEXTO)
   // ============================================================
   async generarRespuestaConIA(question, documentos) {
     try {
-      let contexto = '';
-      documentos.forEach((doc, i) => {
-        const titulo = doc.Titulo || doc.titulo || 'Documento';
-        const contenido = doc.Contenido || doc.contenido || '';
-        contexto += `\n[${i + 1}] FUENTE: ${titulo}\n`;
-        contexto += `${contenido}\n`;
-      });
+      const tieneDocs = documentos && documentos.length > 0;
 
+      // Construir contexto SOLO si hay documentos en la base de conocimiento
+      let contexto = '';
+      if (tieneDocs) {
+        documentos.forEach((doc, i) => {
+          const titulo = doc.Titulo || doc.titulo || 'Documento';
+          const contenido = doc.Contenido || doc.contenido || '';
+          contexto += `\n[${i + 1}] FUENTE: ${titulo}\n`;
+          contexto += `${contenido}\n`;
+        });
+      }
+
+      // Sin API key → fallback local
       if (!DEEPSEEK_API_KEY || DEEPSEEK_API_KEY === 'tu-deepseek-api-key') {
         console.warn('⚠️ No hay API Key de DeepSeek. Usando fallback.');
-        return this.respuestaSinIA(documentos, question);
+        if (tieneDocs) return this.respuestaSinIA(documentos, question);
+        return this.respuestaSinResultados(question);
       }
+
+      // System prompt adaptativo: con o sin contexto
+      const systemPrompt = tieneDocs
+        ? `Eres LEGAL-iCoop, un Asesor Legal Inteligente especializado en Derecho Cooperativo Latinoamericano.
+
+INSTRUCCIONES:
+1. Usa SOLO la información del contexto proporcionado.
+2. Estructura tu respuesta de forma clara y práctica.
+3. Incluye referencias a las fuentes (ej: [1]).
+4. Responde en español con tono profesional pero accesible.
+5. Si la información del contexto es insuficiente, indícalo claramente.
+
+PRINCIPIOS:
+- Precisión legal sobre todo
+- Claridad para consejos directivos
+- Contexto cooperativo siempre presente
+- Recomienda consultar con abogado humano para casos complejos`
+        : `Eres LEGAL-iCoop, un Asesor Legal Inteligente especializado en Derecho Cooperativo Latinoamericano.
+
+INSTRUCCIONES:
+1. Responde en español con tono profesional pero accesible.
+2. Basa tu respuesta en tu conocimiento sobre derecho cooperativo.
+3. Si no tienes información suficiente sobre el tema, indícalo claramente y sugiere consultar con un asesor legal humano.
+4. Siempre aclara que la información es orientativa y no reemplaza la asesoría legal profesional.
+
+PRINCIPIOS:
+- Precisión legal sobre todo
+- Claridad para consejos directivos
+- Contexto cooperativo siempre presente`;
+
+      const userContent = tieneDocs
+        ? `CONSULTA: ${question}\n\nCONTEXTO LEGAL:${contexto}\n\nResponde de forma clara, completa y práctica usando SOLO la información del contexto. Si el contexto no es suficiente para responder, indícalo.`
+        : `CONSULTA: ${question}\n\nResponde basándote en tu conocimiento general sobre derecho cooperativo. Si no tienes información suficiente, indícalo claramente y sugiere consultar con un abogado especializado.`;
 
       const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
         method: 'POST',
@@ -489,27 +726,8 @@ export const apiService = {
           temperature: 0.3,
           max_tokens: 800,
           messages: [
-            {
-              role: 'system',
-              content: `Eres LEGAL-iCoop, un Asesor Legal Inteligente especializado en Derecho Cooperativo Latinoamericano.
-
-INSTRUCCIONES:
-1. Usa SOLO la información del contexto proporcionado.
-2. Estructura tu respuesta de forma clara y práctica.
-3. Incluye referencias a las fuentes (ej: [1]).
-4. Responde en español con tono profesional pero accesible.
-5. Si la información es insuficiente, indícalo claramente.
-
-PRINCIPIOS:
-- Precisión legal sobre todo
-- Claridad para consejos directivos
-- Contexto cooperativo siempre presente
-- Recomienda consultar con abogado humano para casos complejos`
-            },
-            {
-              role: 'user',
-              content: `CONSULTA: ${question}\n\nCONTEXTO LEGAL:${contexto}\n\nResponde de forma clara, completa y práctica.`
-            }
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userContent }
           ]
         })
       });
@@ -517,7 +735,8 @@ PRINCIPIOS:
       if (!response.ok) {
         const errorData = await response.text();
         console.error('❌ Error en DeepSeek:', response.status, errorData);
-        return this.respuestaSinIA(documentos, question);
+        if (tieneDocs) return this.respuestaSinIA(documentos, question);
+        return this.respuestaSinResultados(question);
       }
 
       const data = await response.json();
@@ -525,8 +744,31 @@ PRINCIPIOS:
 
     } catch (error) {
       console.error('❌ Error en IA:', error);
-      return this.respuestaSinIA(documentos, question);
+      if (documentos && documentos.length > 0) return this.respuestaSinIA(documentos, question);
+      return this.respuestaSinResultados(question);
     }
+  },
+
+  // ============================================================
+  // 👋 DETECTAR SALUDOS
+  // ============================================================
+  detectarSaludo(texto) {
+    const saludos = [
+      'hola', 'buen', 'buenas', 'buenos', 'hey', 'hi', 'hello',
+      'saludos', 'qué tal', 'que tal', 'como estas', 'cómo estás',
+      'como está', 'cómo está', 'buen día', 'buen dia',
+      'buenas tardes', 'buenas noches', 'buenos días', 'buenos dias'
+    ];
+
+    const textoLower = texto.toLowerCase().trim().replace(/[¿?!¡.,;:]/g, '');
+
+    for (const saludo of saludos) {
+      if (textoLower === saludo || textoLower.startsWith(saludo + ' ')) {
+        return '👋 ¡Hola! Soy LEGAL-iCoop, tu Asesor Legal Inteligente en Derecho Cooperativo.\n\n¿En qué puedo ayudarte hoy? Puedes preguntarme sobre:\n• Requisitos legales para cooperativas\n• Derechos y obligaciones de los asociados\n• Procedimientos de asambleas y convocatorias\n• Normativa cooperativa vigente\n• Fusión, liquidación y transformación de cooperativas\n\nO simplemente escribe tu consulta legal y la responderé usando nuestra base de conocimiento.';
+      }
+    }
+
+    return null;
   },
 
   // ============================================================

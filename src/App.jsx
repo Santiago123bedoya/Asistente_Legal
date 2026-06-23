@@ -1,5 +1,5 @@
 // src/App.jsx
-// ✅ VERSIÓN DEFINITIVA - SIEMPRE PIDE LOGIN AL RECARGAR
+// ✅ PERSISTENCIA DE SESIÓN - Restaura desde localStorage al recargar
 
 import React, { useState, useEffect } from 'react';
 import Login from './components/Auth/Login';
@@ -12,15 +12,22 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    console.log('🔄 Recargando página - Limpiando sesión...');
-    
-    // ✅ FORZAR LOGOUT EN CADA RECARGA
-    localStorage.removeItem('legal_icoop_user');
-    setUser(null);
-    setIsAuthenticated(false);
+    // ✅ RESTAURAR SESIÓN DESDE LOCALSTORAGE
+    const savedUser = localStorage.getItem('legal_icoop_user');
+    if (savedUser) {
+      try {
+        const userData = JSON.parse(savedUser);
+        console.log('🔄 Sesión restaurada:', userData.email);
+        setUser(userData);
+        setIsAuthenticated(true);
+      } catch (e) {
+        console.warn('⚠️ Error al restaurar sesión, limpiando:', e);
+        localStorage.removeItem('legal_icoop_user');
+      }
+    } else {
+      console.log('👋 No hay sesión guardada. Mostrando Login.');
+    }
     setIsLoading(false);
-    
-    console.log('✅ Sesión limpiada. Mostrando Login.');
   }, []);
 
   const handleLogin = (userData) => {
@@ -67,6 +74,8 @@ function App() {
       userId={user?.$id || user?.id} 
       userRole={user?.role || 'user'} 
       onLogout={handleLogout}
+      mensajesEnviados={user?.mensajes_enviados || 0}
+      limiteMensajes={user?.limite_mensajes ?? 10}
     />
   );
 }

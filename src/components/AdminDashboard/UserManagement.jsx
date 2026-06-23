@@ -2,7 +2,7 @@
 // 👥 Gestión de Usuarios - Diseño moderno
 
 import React, { useState } from 'react';
-import { Plus, Trash2, UserPlus, Shield, User, Mail, Key } from 'lucide-react';
+import { Plus, Trash2, UserPlus, Shield, User, Mail, Key, Save } from 'lucide-react';
 import { apiService } from '../../services/appwrite.service';
 
 const UserManagement = ({ users: initialUsers, stats, onUpdate }) => {
@@ -16,6 +16,9 @@ const UserManagement = ({ users: initialUsers, stats, onUpdate }) => {
     role: 'user'
   });
   const [message, setMessage] = useState('');
+  const [editandoLimite, setEditandoLimite] = useState(null);
+  const [limiteEditando, setLimiteEditando] = useState(10);
+  const [guardandoLimite, setGuardandoLimite] = useState(false);
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -64,6 +67,29 @@ const UserManagement = ({ users: initialUsers, stats, onUpdate }) => {
     } catch (error) {
       setMessage('❌ Error: ' + error.message);
     }
+  };
+
+  const handleSaveLimite = async (userId) => {
+    setGuardandoLimite(true);
+    try {
+      const result = await apiService.actualizarLimiteMensajes(userId, limiteEditando);
+      if (result.success) {
+        setMessage(`✅ Límite actualizado a ${result.limite} mensajes`);
+        setEditandoLimite(null);
+        if (onUpdate) onUpdate();
+      } else {
+        setMessage('❌ Error al actualizar límite');
+      }
+    } catch (error) {
+      setMessage('❌ Error: ' + error.message);
+    } finally {
+      setGuardandoLimite(false);
+    }
+  };
+
+  const iniciarEdicion = (user) => {
+    setEditandoLimite(user.$id);
+    setLimiteEditando(user.limite_mensajes ?? 10);
   };
 
   return (
@@ -161,6 +187,7 @@ const UserManagement = ({ users: initialUsers, stats, onUpdate }) => {
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Usuario</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Rol</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Límite</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Estado</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Acciones</th>
               </tr>
@@ -168,7 +195,7 @@ const UserManagement = ({ users: initialUsers, stats, onUpdate }) => {
             <tbody className="divide-y divide-gray-100">
               {users.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
                     📭 No hay usuarios registrados
                   </td>
                 </tr>
@@ -192,6 +219,39 @@ const UserManagement = ({ users: initialUsers, stats, onUpdate }) => {
                       }`}>
                         {user.Rol === 'admin' ? '👑 Admin' : '👤 Usuario'}
                       </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      {editandoLimite === user.$id ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="1"
+                            max="1000"
+                            value={limiteEditando}
+                            onChange={(e) => setLimiteEditando(parseInt(e.target.value) || 1)}
+                            className="w-20 border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => handleSaveLimite(user.$id)}
+                            disabled={guardandoLimite}
+                            className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                          >
+                            <Save size={16} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => iniciarEdicion(user)}
+                          className="flex items-center gap-1 px-3 py-1 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-all text-sm"
+                        >
+                          <span className="text-gray-700 font-medium">{user.limite_mensajes ?? 10}</span>
+                          <span className="text-gray-400 text-xs">✎</span>
+                        </button>
+                      )}
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        {user.mensajes_enviados || 0} usados
+                      </div>
                     </td>
                     <td className="px-6 py-4">
                       <span className="px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">

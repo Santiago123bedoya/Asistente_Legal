@@ -4,43 +4,64 @@
 
 ---
 
-## 📦 DEPENDENCIAS COMPLETAS
+## 🚀 Inicio rápido
 
-### Frontend (carpeta `frontend/`)
-
-Ejecuta dentro de `frontend/`:
 ```bash
-npm install react react-dom
-npm install framer-motion
-npm install lucide-react
-npm install tailwindcss postcss autoprefixer
-npm install vite @vitejs/plugin-react
-npm install appwrite
-npm install axios
+# 1. Instalar dependencias
+npm install
 
+# 2. Configurar .env
+cp .env.example .env
+# Editar con tus credenciales de Appwrite y DeepSeek
 
- Instalar FRONTEND
-cd frontend
-npm install react react-dom framer-motion lucide-react tailwindcss postcss autoprefixer vite @vitejs/plugin-react appwrite axios
-
-# 3. Instalar BACKEND (opcional)
-cd ../backend
-npm install express cors dotenv node-appwrite openai nodemon --save-dev
-
-# 4. Instalar Appwrite CLI (global)
-npm install -g appwrite-cli
-
-# 5. Volver a la raíz
-cd ..
-
-# 6. Configurar .env
-cp frontend/.env.example frontend/.env
-# Editar con tus credenciales
-
-# 7. Configurar Appwrite
-node scripts/create-collections.js
-node scripts/seed-knowledge.js
-
-# 8. Iniciar
-cd frontend
+# 3. Iniciar dev
 npm run dev
+```
+
+## 📦 Stack
+
+| Capa       | Tecnología                              |
+| ---------- | --------------------------------------- |
+| Frontend   | React 18 + Vite + TailwindCSS           |
+| UI         | Framer Motion + Lucide Icons            |
+| Estado     | Zustand                                 |
+| Backend    | Appwrite (BaaS)                         |
+| IA         | DeepSeek API + RAG                      |
+
+## 🔧 Scripts
+
+| Comando           | Descripción              |
+| ----------------- | ------------------------ |
+| `npm run dev`     | Inicia servidor de dev   |
+| `npm run build`   | Build para producción    |
+| `npm run preview` | Previsualiza el build    |
+
+## 🧠 Arquitectura
+
+- **Autenticación**: Appwrite Auth + colección de usuarios en DB
+- **Chat**: RAG sobre base de conocimiento → DeepSeek API
+- **Roles**: usuario normal (chat) y admin (dashboard)
+- **Base de conocimiento**: documentos de derecho cooperativo indexados en Appwrite
+
+## 📁 Estructura
+
+```
+src/
+├── components/
+│   ├── AdminDashboard/   # Panel de administración
+│   ├── Auth/             # Login/Registro
+│   ├── ChatInterface/    # Chat legal con IA
+│   └── Common/           # Componentes compartidos
+├── hooks/                # Custom hooks (useAuth, useChat, useMetrics)
+├── pages/                # Páginas principales
+├── services/             # Appwrite, chat, auth, admin
+├── store/                # Zustand stores
+├── utils/                # Formateadores, validadores
+├── App.jsx
+├── main.jsx
+└── index.css
+```
+
+## ⚠️ Disclaimer
+
+LEGAL-iCoop complementa pero NO reemplaza la asesoría legal humana.

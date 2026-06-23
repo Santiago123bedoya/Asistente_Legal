@@ -1,9 +1,0 @@
-{
-  "name": "legal-icoop-auth",
-  "version": "1.0.0",
-  "description": "Legal-iCoop Auth Function",
-  "main": "index.js",
-  "dependencies": {
-    "node-appwrite": "^11.0.0"
-  }
-}
