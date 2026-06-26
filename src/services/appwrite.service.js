@@ -599,10 +599,12 @@ export const apiService = {
   },
 
   // ============================================================
-  // 🔍 BUSCAR EN BASE DE DATOS
+  // 🔍 BUSCAR EN BASE DE DATOS - VERSIÓN MEJORADA AL 100%
   // ============================================================
   async buscarEnBaseDeDatos(question) {
     try {
+      console.log('🔍 Buscando en base de conocimiento:', question);
+      
       const response = await fetch(
         `${APPWRITE_ENDPOINT}/databases/${DATABASE_ID}/collections/${KNOWLEDGE_COLLECTION_ID}/documents`,
         {
@@ -615,44 +617,186 @@ export const apiService = {
         }
       );
       
-      if (!response.ok) return [];
+      if (!response.ok) {
+        console.warn('⚠️ Error al obtener documentos:', response.status);
+        return [];
+      }
       
       const data = await response.json();
       const todos = data.documents || [];
       
-      const questionLower = question.toLowerCase();
-      const palabrasClave = questionLower
-        .replace(/[¿?¡!.,;:]/g, '')
-        .split(' ')
-        .filter(p => p.length > 3);
+      if (todos.length === 0) {
+        console.log('📭 No hay documentos en la base de conocimiento');
+        return [];
+      }
       
-      const relevantes = todos.map(doc => {
+      const questionLower = question.toLowerCase();
+      
+      // 🔑 Extraer palabras clave de la pregunta
+      const palabrasClave = questionLower
+        .replace(/[¿?¡!.,;:()"']/g, '')
+        .split(' ')
+        .filter(p => p.length > 2);
+      
+      console.log(`📋 Palabras clave: ${palabrasClave.join(', ')}`);
+      
+      // 🎯 MAPA DE CATEGORÍAS Y SUS PALABRAS CLAVE
+      const categoriasMap = {
+        'Legislación cooperativa': ['ley', 'artículo', 'norma', 'decreto', 'circular', 'constitución', 'código', 'legal', 'legislación', 'estatuto', 'reglamento'],
+        'Gobierno cooperativo': ['asamblea', 'consejo', 'directivo', 'elección', 'voto', 'democrático', 'control', 'gobierno', 'administración', 'gestión'],
+        'Derechos de asociados': ['derecho', 'asociado', 'obligación', 'exclusión', 'retiro', 'participación', 'miembro', 'socio'],
+        'Protección de datos': ['datos', 'protección', 'privacidad', 'personal', 'seguridad', 'consentimiento', 'información'],
+        'Estatutos modelo': ['estatuto', 'reglamento', 'modelo', 'estructura', 'organización', 'norma interna'],
+        'Fusiones y reestructuración': ['fusión', 'absorción', 'integración', 'liquidación', 'reestructuración', 'disolución'],
+        'Normativa laboral': ['laboral', 'trabajo', 'contrato', 'empleado', 'salario', 'prestación', 'ocupacional'],
+        'Responsabilidad legal': ['responsabilidad', 'riesgo', 'seguro', 'sanción', 'penal', 'civil', 'legal']
+      };
+      
+      // 🔍 DETECTAR CATEGORÍA PROBABLE
+      let categoriaProbable = null;
+      let maxCoincidencias = 0;
+      
+      for (const [categoria, palabras] of Object.entries(categoriasMap)) {
+        let coincidencias = 0;
+        for (const palabra of palabras) {
+          if (questionLower.includes(palabra)) {
+            coincidencias++;
+          }
+        }
+        if (coincidencias > maxCoincidencias) {
+          maxCoincidencias = coincidencias;
+          categoriaProbable = categoria;
+        }
+      }
+      
+      if (categoriaProbable) {
+        console.log(`🎯 Categoría probable: ${categoriaProbable} (${maxCoincidencias} coincidencias)`);
+      }
+      
+      // 📊 CALCULAR PUNTAJE DE CADA DOCUMENTO
+      const resultados = todos.map(doc => {
         const titulo = (doc.Titulo || doc.titulo || '').toLowerCase();
         const contenido = (doc.Contenido || doc.contenido || '').toLowerCase();
         const categoria = (doc.Categoria || doc.categoria || '').toLowerCase();
+        const resumen = (doc.Resumen || doc.resumen || '').toLowerCase();
+        const etiquetas = (doc.Etiquetas || doc.etiquetas || '').toLowerCase();
         
         let puntaje = 0;
-        palabrasClave.forEach(palabra => {
-          if (titulo.includes(palabra)) puntaje += 5;
-          if (categoria.includes(palabra)) puntaje += 3;
-          if (contenido.includes(palabra)) puntaje += 1;
-        });
         
-        if (questionLower.includes('asamblea') || questionLower.includes('convocar')) {
+        // 🔥 PESO 1: Título (muy importante)
+        for (const palabra of palabrasClave) {
+          if (titulo.includes(palabra)) {
+            puntaje += 15;
+          }
+        }
+        
+        // 🔥 PESO 2: Coincidencia exacta en título (muy valioso)
+        for (const palabra of palabrasClave) {
+          if (titulo.includes(palabra) && palabra.length > 4) {
+            puntaje += 10;
+          }
+        }
+        
+        // 🔥 PESO 3: Categoría (valioso)
+        for (const palabra of palabrasClave) {
+          if (categoria.includes(palabra)) {
+            puntaje += 8;
+          }
+        }
+        
+        // 🔥 PESO 4: Resumen
+        for (const palabra of palabrasClave) {
+          if (resumen.includes(palabra)) {
+            puntaje += 5;
+          }
+        }
+        
+        // 🔥 PESO 5: Etiquetas
+        for (const palabra of palabrasClave) {
+          if (etiquetas.includes(palabra)) {
+            puntaje += 4;
+          }
+        }
+        
+        // 🔥 PESO 6: Contenido (menos peso porque es muy extenso)
+        for (const palabra of palabrasClave) {
+          if (contenido.includes(palabra)) {
+            puntaje += 2;
+          }
+        }
+        
+        // 🔥 PESO 7: Bonificación si la pregunta contiene "fondo" o "social"
+        if (questionLower.includes('fondo') || questionLower.includes('social') || questionLower.includes('educación') || questionLower.includes('solidaridad')) {
+          if (titulo.includes('fondo') || titulo.includes('social') || titulo.includes('educación') || titulo.includes('solidaridad') || titulo.includes('circular')) {
+            puntaje += 30;
+          }
+          if (contenido.includes('fondo de educación') || contenido.includes('fondo de solidaridad')) {
+            puntaje += 40;
+          }
+          if (categoria.includes('legislación')) {
+            puntaje += 15;
+          }
+        }
+        
+        // 🔥 PESO 8: Bonificación si la pregunta contiene "asamblea"
+        if (questionLower.includes('asamblea') || questionLower.includes('convocar') || questionLower.includes('convocatoria')) {
           if (categoria.includes('gobierno')) puntaje += 10;
           if (titulo.includes('asamblea')) puntaje += 15;
+        }
+        
+        // 🔥 PESO 9: Bonificación por categoría probable
+        if (categoriaProbable && categoria.includes(categoriaProbable.toLowerCase())) {
+          puntaje += 20;
+        }
+        
+        // 🔥 PESO 10: Palabras clave únicas en contenido (aparecen pocas veces)
+        let palabrasUnicas = 0;
+        for (const palabra of palabrasClave) {
+          const count = (contenido.match(new RegExp(palabra, 'g')) || []).length;
+          if (count > 0) palabrasUnicas++;
+        }
+        if (palabrasUnicas === palabrasClave.length && palabrasUnicas > 0) {
+          puntaje += 15; // Todas las palabras clave aparecen en el contenido
         }
         
         return { ...doc, puntaje };
       });
       
-      return relevantes
-        .filter(d => d.puntaje > 0)
+      // 📊 FILTRAR Y ORDENAR
+      let filtrados = resultados.filter(d => d.puntaje > 0);
+      
+      // ⚠️ Si no hay resultados con puntaje, buscar por categoría
+      if (filtrados.length === 0 && categoriaProbable) {
+        console.log(`🔍 Buscando por categoría: ${categoriaProbable}`);
+        filtrados = resultados.filter(d => {
+          const cat = (d.Categoria || d.categoria || '').toLowerCase();
+          return cat.includes(categoriaProbable.toLowerCase());
+        });
+      }
+      
+      // ⚠️ Si aún no hay resultados, buscar en títulos que contengan palabras clave
+      if (filtrados.length === 0) {
+        console.log('🔍 Buscando por coincidencia en título');
+        filtrados = resultados.filter(d => {
+          const titulo = (d.Titulo || d.titulo || '').toLowerCase();
+          return palabrasClave.some(p => titulo.includes(p));
+        });
+      }
+      
+      // Ordenar por puntaje y tomar los mejores
+      const finales = filtrados
         .sort((a, b) => b.puntaje - a.puntaje)
-        .slice(0, 3);
+        .slice(0, 5);
+      
+      console.log(`✅ Resultados: ${finales.length} documentos encontrados`);
+      finales.forEach(d => {
+        console.log(`  - ${d.Titulo || d.titulo} (puntaje: ${d.puntaje})`);
+      });
+      
+      return finales;
       
     } catch (error) {
-      console.error('Error buscando:', error);
+      console.error('❌ Error en buscarEnBaseDeDatos:', error);
       return [];
     }
   },
